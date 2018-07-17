@@ -1,8 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import cProfile
 
-import time
 
 '''
 parameters
@@ -292,17 +290,5 @@ def main(z,alpha,eps,ki,b,c,intensity):
 
 start_time = time.time()
 print(main(50,0.01,0.08,0.01,5,1,1))
-print("--- %s seconds ---" % (time.time() - start_time))
-###profiling
-'''
-pr = cProfile.Profile()
-pr.enable()
-main(40,[1,0,0,1],0.01,0.08,0.01,5,1,1)
-pr.disable()
-pr.print_stats(sort='time')
 
-norm = [1,0,0,0]
-a = main(30,norm,0.01,0.08,0.01,5,1,1)
-print(a)
-#plotting
-'''
+
