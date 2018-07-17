@@ -288,7 +288,6 @@ def main(z,alpha,eps,ki,b,c,intensity):
 
 
 
-start_time = time.time()
 print(main(50,0.01,0.08,0.01,5,1,1))
 
 
