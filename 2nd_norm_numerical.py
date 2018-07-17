@@ -261,12 +261,10 @@ def main(z,alpha,eps,ki,b,c,intensity):
     idx = np.argmin(np.abs(eigenvalues - 1))
     w = np.real(eigenvectors[:, idx]).T
     matrix_T = w/np.sum(w)
-    #fixation pr
-    x = [i for i in range(0,64)]
-
-    #dump fixation into csv
-    np.savetxt("fix.csv", matrix_T, delimiter=",")
     
+    
+    #plotting
+    x = [i for i in range(0,64)]
     plt.bar(x,matrix_T)
     plt.title('Fixation probabilities of all strats')
     plt.xlabel("Strategies")
