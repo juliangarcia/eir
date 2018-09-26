@@ -8,7 +8,7 @@ comm_mpi = MPI.COMM_WORLD
 rank_mpi = comm_mpi.Get_rank()
 size_mpi = comm_mpi.Get_size()
 name_mpi = MPI.Get_processor_name()
-print("I am process " + str(rank_mpi) + " of " + str(size_mpi) + " from " + name_mpi)
+print("I the process " + str(rank_mpi) + " of " + str(size_mpi) + " from " + name_mpi)
 
 
 '''
