@@ -1,6 +1,14 @@
+from mpi4py import MPI
 import numpy as np
-
 import argparse
+
+
+#MPI initialization
+comm_mpi = MPI.COMM_WORLD
+rank_mpi = comm_mpi.Get_rank()
+size_mpi = comm_mpi.Get_size()
+name_mpi = MPI.Get_processor_name()
+print("I am process " + str(rank_mpi) + " of " + str(size_mpi) + " from " + name_mpi)
 
 
 '''
@@ -415,15 +423,105 @@ def calculate_avg_fitness(z, k, coop, coop1, sigma, b, c, states):
 # c = Cost of donating to opponent
 
 # flag = assignment rules, can be '3p' or 'pw'
-
+#-------------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------------
 def calculate_fixation(z, intensity, p, p_dash, coop1, coop2, coop3, coop4, b, c, flag):
 
     # to store computed avg fitness difference
 
     memo = [None]*(z)
+    listed = np.full((z,3),999999)
 
     result = 0
 
+    #AEG: A first cycle to define the order of solution
+    # i=k, the number of p individuals
+    for i in range(1, z):
+
+        for j in range(1, i+1):
+
+            if listed[j,0] == 999999:
+                dim = (j+1)*(z-j+1)
+
+                listed[j]= [j,z,dim]
+
+    #AEG: Sorting by dimension in descending order
+    listed=listed[np.argsort(-listed[:,2])]
+
+
+    #AEG: Distributing the load among the existing ranks_mpi
+    fair = (z-1)//size_mpi
+    leftovers= (z-1)%size_mpi
+    #if (rank_mpi==0):
+    #    print("z=" + str(z) + ",matrices=" + str(z-1) + ",Stride=" + str(fair) + ",leftovers=" + str(leftovers))
+     
+    localListed = np.full((fair+1,3),999999)
+
+    ksolve=0;
+    for k in range(0,fair):
+        localListed[k]=listed[rank_mpi+k*size_mpi+1]
+        ksolve=ksolve+1
+
+    lj=size_mpi-rank_mpi-1
+    if (lj<leftovers):
+        localListed[ksolve]=listed[(z-1)-1-lj+1]
+        ksolve=ksolve+1
+    
+
+
+    #AEG: A second cycle to solve for the eigenvalues
+    # i=k, the number of p individuals
+    for r in range(0, ksolve):
+        jHere = localListed[r,0]
+        zHere = localListed[r,1]
+        states = {}
+
+        # indx ctr
+
+        ctr = 0
+
+        for m in range(jHere+1):
+
+            for n in range(zHere-jHere+1):
+
+                states[(m, n)] = ctr
+
+                ctr += 1
+
+        # reputation distribution
+        sigma = rep_distribution(
+            zHere, jHere, coop1, coop2, coop3, coop4, states, flag)
+
+        avg_1, avg_2 = calculate_avg_fitness(
+            zHere, jHere, coop1, coop3, sigma, b, c, states)  # avg_fitness
+
+        memo[jHere] = avg_1 - avg_2
+
+    #AEG: Sending the info back to rank_mpi==0
+    comm_mpi.barrier()
+    auxSend=np.full((1,1),999999.0)
+    for k in range(0,ksolve):
+        jHere=localListed[k,0]
+        auxSend[0]=memo[jHere]
+        #print("Sending auxSend=" + str(auxSend[0]) + "=" + str(memo[jHere]) + " from rank_mpi=" + str(rank_mpi))
+        comm_mpi.send(auxSend,dest=0,tag=jHere)
+
+    #AEG: Now receiving everything
+    auxRec=np.full((1,1),999999.0)
+    if (rank_mpi==0):
+        for j in range(1,z):
+            auxRec=comm_mpi.recv(source=MPI.ANY_SOURCE,tag=j)
+            memo[j]=auxRec[0]
+            #print("Received auxRec=" + str(auxRec[0]) + "=" + str(memo[j]) + " from rank_mpi=" + str(rank_mpi))
+
+    #AEG: For avoiding errors, broadcasting memo back to all ranks
+    comm_mpi.barrier()
+    memo = comm_mpi.bcast(memo,root=0)
+
+    #AEG: Third cycle for calculating a exponentials
     # i = k, the number of p individuals
     for i in range(1, z):
 
@@ -431,36 +529,7 @@ def calculate_fixation(z, intensity, p, p_dash, coop1, coop2, coop3, coop4, b, c
 
         for j in range(1, i+1):
 
-            if memo[j] == None:
-
-                states = {}
-
-                # indx ctr
-
-                ctr = 0
-
-                for m in range(j+1):
-
-                    for n in range(z-j+1):
-
-                        states[(m, n)] = ctr
-
-                        ctr += 1
-
-                # reputation distribution
-                sigma = rep_distribution(
-                    z, j, coop1, coop2, coop3, coop4, states, flag)
-
-                avg_1, avg_2 = calculate_avg_fitness(
-                    z, j, coop1, coop3, sigma, b, c, states)  # avg_fitness
-
-                diff = avg_1 - avg_2
-
-                memo[j] = diff
-
-            else:
-
-                diff = memo[j]
+            diff = memo[j]
 
             tot *= np.exp(-1*intensity*diff)
 
@@ -590,6 +659,7 @@ def coop_index(z, fixations, alpha, eps, ki, flag):
 
 def main(z, alpha, eps, ki, b, c, intensity, flag):
 
+
     Tr = np.zeros((64, 64))
     # f is resident(p'),N-1 qty
 
@@ -673,11 +743,12 @@ def main(z, alpha, eps, ki, b, c, intensity, flag):
 
     # transition matrix
 
-    np.savetxt(name + "_trans.csv", Tr, delimiter=",")
+    if (rank_mpi==0):
+        np.savetxt(name + "_transParallel.csv", Tr, delimiter=",")
 
     # eigenvector
-
-    np.savetxt(name + "_fix.csv", matrix_T, delimiter=",")
+    if (rank_mpi==0):
+        np.savetxt(name + "_fixParallel.csv", matrix_T, delimiter=",")
 
     # calculate avg donations
 
