@@ -1,0 +1,15 @@
+#!/bin/bash -l
+
+#SBATCH --ntasks=24
+#SBATCH --ntasks-per-node=24
+#SBATCH --export=NONE
+#SBATCH --time=01:00:00
+#SBATCH --partition=debugq
+
+module load python/3.6.3
+module load numpy
+module load mpi4py
+
+#srun -n 1 --export=all time -v python3 second_norms_endogenous.py 10 0.01 0.01 0.01 5 1 1 pw
+srun -u -n 1 --export=all time -v python3 second_norms_endogenous.py $SLURM_NTASKS 0.01 0.01 0.01 5 1 1 pw
+srun -u -n 24 --export=all time -v python3 mpi4py_second_norms_endogenous.py $SLURM_NTASKS 0.01 0.01 0.01 5 1 1 pw
