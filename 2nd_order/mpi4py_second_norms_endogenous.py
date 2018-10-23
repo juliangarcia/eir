@@ -3,7 +3,7 @@ import numpy as np
 import argparse
 
 
-#MPI initialization
+#AEG: MPI initialization
 comm_mpi = MPI.COMM_WORLD
 rank_mpi = comm_mpi.Get_rank()
 size_mpi = comm_mpi.Get_size()
@@ -429,23 +429,31 @@ def calculate_avg_fitness(z, k, coop, coop1, sigma, b, c, states):
 #-------------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------------
 def calculate_fixation(z, intensity, p, p_dash, coop1, coop2, coop3, coop4, b, c, flag):
-
-    # to store computed avg fitness difference
+#AEG: The parallelization of the code was applied in this function.
+# The original calculate_fixation has a single double-loop where almost everything is done.
+# In this parallel version, the original double-loop was separated into 3 stages:
+# 1.Distribution of the workload among the existing tasks:
+#   1.1 A first double-loop is used to calculate the dimensions and these are included in a list
+#   1.2 The list is ordered with dimension as criteria
+#   1.3 The dimensions are taken by each rank in a fair manner
+# 2.Rep_distribution calculation is performed in parallel:
+#   2.1 Each task executes the rep_distribution case assigned to them in the previous stage.
+#   2.2 Then the difference of the avg_fitness is stored in memo array.
+#   2.3 All the information collected in local memo is sent to rank0, which is the printer of results.
+# 3.The fixation probability is calculated in a final loop.
 
     memo = [None]*(z)
     listed = np.full((z,3),999999)
 
     result = 0
-
-    #AEG: A first cycle to define the order of solution
+#....... 
+#AEG. Stage 1. Distribution of workload
+    #AEG: Cycle to define the order of solution
     # i=k, the number of p individuals
     for i in range(1, z):
-
         for j in range(1, i+1):
-
             if listed[j,0] == 999999:
                 dim = (j+1)*(z-j+1)
-
                 listed[j]= [j,z,dim]
 
     #AEG: Sorting by dimension in descending order
@@ -471,8 +479,9 @@ def calculate_fixation(z, intensity, p, p_dash, coop1, coop2, coop3, coop4, b, c
         ksolve=ksolve+1
     
 
-
-    #AEG: A second cycle to solve for the eigenvalues
+#.......
+#AEG. Stage 2. Each task do the rep_distribution and avg_fitness assigned to them
+    #AEG: Cycle to perform the assigned work
     # i=k, the number of p individuals
     for r in range(0, ksolve):
         jHere = localListed[r,0]
@@ -484,11 +493,8 @@ def calculate_fixation(z, intensity, p, p_dash, coop1, coop2, coop3, coop4, b, c
         ctr = 0
 
         for m in range(jHere+1):
-
             for n in range(zHere-jHere+1):
-
                 states[(m, n)] = ctr
-
                 ctr += 1
 
         # reputation distribution
@@ -520,21 +526,16 @@ def calculate_fixation(z, intensity, p, p_dash, coop1, coop2, coop3, coop4, b, c
     #AEG: For avoiding errors, broadcasting memo back to all ranks
     comm_mpi.barrier()
     memo = comm_mpi.bcast(memo,root=0)
-
-    #AEG: Third cycle for calculating a exponentials
+#.......
+#AEG. Stage 3. Calculate fixation probability
+    #AEG: Cycle for calculating a exponentials
     # i = k, the number of p individuals
     for i in range(1, z):
-
         tot = 1
-
         for j in range(1, i+1):
-
             diff = memo[j]
-
             tot *= np.exp(-1*intensity*diff)
-
         result += tot
-
     pr = 1/(1+result)
 
     # returns the fixation probability
@@ -668,8 +669,9 @@ def main(z, alpha, eps, ki, b, c, intensity, flag):
     # entry (f,g) in Tr means the fixation probability of 1 g(mutant) strategy player taking over z-1 f(resident) strategy player
 
     for f in range(64):
-        print("Starting f=" + str(f))
         for g in range(64):
+            if (rank_mpi==0): #AEG: Only printed by rank0
+                print("Starting f=" + str(f) ,", g=" + str(g)) #AEG: Messaging out the status of the run (f and g)
             if f != g:
 
                 # action of p
@@ -742,12 +744,11 @@ def main(z, alpha, eps, ki, b, c, intensity, flag):
         z=z, alpha=alpha, epsilon=eps, ki=ki, b=b, c=c, w=intensity, rule=flag)
 
     # transition matrix
-
-    if (rank_mpi==0):
+    if (rank_mpi==0): #AEG: Only printed by rank0
         np.savetxt(name + "_transParallel.csv", Tr, delimiter=",")
 
     # eigenvector
-    if (rank_mpi==0):
+    if (rank_mpi==0): #AEG: Only printed by rank0
         np.savetxt(name + "_fixParallel.csv", matrix_T, delimiter=",")
 
     # calculate avg donations
@@ -795,22 +796,24 @@ if __name__ == '__main__':
 
     flag = args.rule
 
-    print('population = ' + str(z))
+    if (rank_mpi==0): #AEG: Only printed by rank0
+        print('population = ' + str(z))
 
-    print('assignment error = ' + str(alpha))
+        print('assignment error = ' + str(alpha))
 
-    print('execution error = ' + str(eps))
+        print('execution error = ' + str(eps))
 
-    print('private error = ' + str(ki))
+        print('private error = ' + str(ki))
 
-    print('benefit = ' + str(b))
+        print('benefit = ' + str(b))
 
-    print('cost = ' + str(c))
+        print('cost = ' + str(c))
 
-    print('intensity = ' + str(w))
+        print('intensity = ' + str(w))
 
-    print('assignment rule = ' + str(flag))
+        print('assignment rule = ' + str(flag))
 
     coop = main(z, alpha, eps, ki, b, c, w, flag)
 
-    print('cooperation index = ' + str(coop))
+    if (rank_mpi==0): #AEG: Only printed by rank0
+        print('cooperation index = ' + str(coop))
